@@ -3,17 +3,17 @@
 	"tasks": [
 		{
 			"type": "cppbuild",
-			"label": "C/C++: g++ build",
+			"label": "C/C++: g++ build singleNode",
 			"command": "/usr/bin/g++",
 			"args": [
 				"-fdiagnostics-color=always",
 				"-g",
-				"${workspaceFolder}/SingleNode/singleNode.cpp",
+				"${workspaceFolder}/Capstone_BrNN/SingleNode/singleNode.cpp",
 				"-o",
-				"${workspaceFolder}/SingleNode/singleNode"
+				"${workspaceFolder}/Capstone_BrNN/SingleNode/singleNode"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}/SingleNode"
+				"cwd": "${workspaceFolder}/Capstone_BrNN/SingleNode"
 			},
 			"problemMatcher": [
 				"$gcc"

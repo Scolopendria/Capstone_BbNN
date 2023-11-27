@@ -3,13 +3,14 @@
 
 #include <iostream>
 #include <vector>
+#include <array>
 #include <string>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
 
 #define FILE "data.txt"
-
+#define INPUT_NODE_INDEX -1
 class Sample {
 	public:
 	std::vector<int> input;
@@ -41,7 +42,7 @@ class Node {
 };
 
 std::string extract(std::string filename);
-std::vector<int> runModel(
+std::vector<std::array<int, 1>> runModel(
     std::vector<Node>& nodes,
     std::vector<bi_int> activeNodes,
     Sample sample
@@ -49,7 +50,7 @@ std::vector<int> runModel(
 std::vector<Sample> parseData(const std::string& data);
 
 int main(int argc, char *argv[]) {
-	std::vector<Node> nodes;
+    std::vector<Node> nodes;
 	std::vector<bi_int> activeNodes; // Try 1
 	
     std::string data = extract(FILE);
@@ -60,9 +61,12 @@ int main(int argc, char *argv[]) {
     for (auto sample: samples) {
         // For 1 var input and 1 var output
         bi_int inputNode;
-        inputNode.index = 0;
+        inputNode.index = INPUT_NODE_INDEX;
         inputNode.value = sample.input.front();
         activeNodes.push_back(inputNode);
+        Node node;
+        node.connected_from.push_back(INPUT_NODE_INDEX);
+        nodes.push_back(node);
 
         // int cost = 0; // ?
         for (auto sample: samples) {
@@ -74,48 +78,83 @@ int main(int argc, char *argv[]) {
 }
 
 /* Run Model */
-std::vector<int> runModel(
+std::vector<std::array<int, 1>> runModel(
     std::vector<Node>& nodes,
     std::vector<bi_int> activeNodes,
     Sample sample
 ) {
-	while (1) {
-		std::vector<bi_int> currentNodes;
+    int timestep = 0;
+    std::vector<bi_int> currentNodes;
+    std::vector<std::array<int, 1>> output;
+    //   ->|<- This '1' stands for it is worthwhile to continue calculating
+	while (1) { // Right now, it is handled by timestep; when timestep reaches 20, it breaks
+        currentNodes.clear();
+        timestep++;
+
 		for (auto node: nodes) {
 			int accumulator = 0;
-			for (auto inputNodeIndex: node.connected_from) {
+			for (auto inputtingNodeIndex: node.connected_from) {
 				auto it = std::find_if(
 					activeNodes.begin(),
 					activeNodes.end(),
-					[inputNodeIndex](bi_int pair) {
-						return pair.index == inputNodeIndex;
+					[inputtingNodeIndex](bi_int pair) {
+						return pair.index == inputtingNodeIndex;
 					}
 				);
 				
 				if (it != activeNodes.end()) {
-                    accumulator += (*it).value;
+                    accumulator += it->value;
                     currentNodes.push_back(*it);
 				}
 			}
 		}
-		
+
+        if (
+            std::find_if(
+                activeNodes.begin(),
+                activeNodes.end(),
+                [](bi_int pair) {
+                    return pair.index == 0;
+                }
+			) == activeNodes.end()
+        ) {
+            auto it = std::find_if(
+                activeNodes.begin(),
+                activeNodes.end(),
+                [](bi_int pair) {
+                    return pair.index == 0;
+                }
+			);
+
+            // We know 'it' is valid, but check for the grneralized case
+            std::array<int, 1> outputSlice = {
+                it->value
+            };
+
+            output.push_back(outputSlice);
+        }
+
 		activeNodes.clear();
 		activeNodes = currentNodes;
-		currentNodes.clear();
+
+        if (timestep > 20) break;
     }
+
+    std::cout << "Here!" << std::endl;
+    return output;
 }
 
 /* Training function */
 
 
 std::string extract(std::string filename) {
-std::ifstream file;
-std::ostringstream content;
-file.open(filename);
-	content << file.rdbuf();
-file.close();
+    std::ifstream file;
+    std::ostringstream content;
+    file.open(filename);
+    content << file.rdbuf();
+    file.close();
 
-return content.str();
+    return content.str();
 }
 
 std::vector<Sample> parseData(const std::string& data) {
