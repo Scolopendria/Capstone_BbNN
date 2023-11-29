@@ -28,14 +28,14 @@ int main(int argc, char const* argv[])
 
 	// Forcefully attaching socket to the port 8080
 	if (
-setsockopt(
-server_fd,
-SOL_SOCKET,
+		setsockopt(
+			server_fd,
+			SOL_SOCKET,
 			SO_REUSEADDR | SO_REUSEPORT,
-&opt,
+			&opt,
 			sizeof(opt)
-)
-) {
+		)
+	) {
 		perror("setsockopt");
 		exit(EXIT_FAILURE);
 	}
@@ -46,12 +46,12 @@ SOL_SOCKET,
 
 	// Forcefully attaching socket to the port 8080
 	if (
-bind(
-server_fd,
-(struct sockaddr*)&address,
+		bind(
+			server_fd,
+			(struct sockaddr*)&address,
 			sizeof(address)
-) < 0
-)  {
+		) < 0
+	)  {
 		perror("bind failed");
 		exit(EXIT_FAILURE);
 	}
@@ -61,8 +61,7 @@ server_fd,
 		exit(EXIT_FAILURE);
 	}
 
-	if ((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen)) < 0
-) {
+	if ((new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen)) < 0) {
 		perror("accept");
 		exit(EXIT_FAILURE);
 	}
