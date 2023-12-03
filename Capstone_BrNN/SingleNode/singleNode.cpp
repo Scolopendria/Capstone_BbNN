@@ -49,7 +49,7 @@ class NodeV2 {
    int threshold = 0;
    int bias = 0;
    // int weight = 1;
-   // int value = 0; // ?
+   int value = 0; // ?
    int index = 0;
    std::vector<bi_int> connected_from;
 };
@@ -89,7 +89,7 @@ int main(int argc, char *argv[]) {
       activeNodes.push_back(inputNode);
 
        // int cost = 0; // ?
-       std::cout << "Here: " << sample.input.front() << "\n";
+       std::cout << "Here: " << sample.input.front() << "\t" << sample.output.front() <<"\n";
        runModel(nodes, activeNodes, sample); // timestep, chain ?
    }
 
@@ -100,10 +100,10 @@ int main(int argc, char *argv[]) {
 /* Run Model Try 1, V2 */
 std::vector<std::array<int, 1>> runModel(
   std::vector<NodeV2>& nodes,
-  std::vector<bi_int>activeNodes,
+  std::vector<bi_int> activeNodes,
   Sample sample
 ) {
-   int timestep = 0;
+     int timestep = 0;
    std::vector<bi_int> currentNodes;
    std::vector<std::array<int, 1>> output; // generalize
 
@@ -111,25 +111,62 @@ std::vector<std::array<int, 1>> runModel(
    while (1) {
        if (timestep > 20) break; //  primitive handling of breaking system
        currentNodes.clear();
+
+       // Randomly add nodes and see if it works
+       NodeV2 randomNode;
+       randomNode.index = nodes.size();
+       bi_int randomConnection;
+       randomConnection.index = random() % nodes.size();
+       if (!(random() % 3)) {
+        randomConnection.index = -1;
+       }
+       randomConnection.value = random() % 50;
+       randomNode.connected_from.push_back(randomConnection);
+       randomNode.threshold = random() % 100 - 100;
+       randomNode.bias = random() % 100 - 100;
+       
       
-       for (auto node: nodes) {
+       nodes.push_back(randomNode); // Theoretically, if all works, this should be able to learn...
+
+      bi_int randomConnection2;
+       randomConnection2.index = random() % nodes.size();
+       randomConnection2.value = random() % 50;
+       if (true){
+         nodes[0].connected_from .push_back(randomConnection2);
+       }
+       for (auto &node: nodes) {
            int accumulator = node.bias; // node.value ?
-           for (auto inputtingNodeIndex: node.connected_from) {
-               auto it = std::find_if(
+           for (auto inputtingNode: node.connected_from) {
+               auto it = std::find_if( // fix implementation
                    activeNodes.begin(),
                    activeNodes.end(),
-                   [inputtingNodeIndex](bi_int other) {
-                       return other.index == inputtingNodeIndex.index;
+                   [inputtingNode](bi_int other) {
+                       return other.index == inputtingNode.index;
                    }
                );
-
-
                if (it != activeNodes.end()) {
-                   accumulator += inputtingNodeIndex.value * it->value;
+                   accumulator += inputtingNode.value * it->value;
                }
            }
-          
-           if (accumulator > node.threshold) {
+            bool activate = accumulator > node.threshold;
+            node.value = activate ? accumulator : 0;
+            //if (node.index == 0) {
+              //std::cout << "test " << activate << " " << node.value << "\n";
+            //}
+            
+            for (auto& inputtingNode: node.connected_from) {
+              auto it = std::find_if(
+                nodes.begin(),
+                nodes.end(),
+                [inputtingNode](NodeV2 other) {
+                  return other.index == inputtingNode.index;
+                }
+              ); // Expectations
+                                                                     // These multipliers should change based off how wrong the signal was
+               inputtingNode.value = (float)inputtingNode.value * (activate ? 1.5 : .75) + (accumulator ? 7: -6);
+            }
+            
+           if (activate) {
                bi_int current;
                current.index = node.index;
                current.value = accumulator;
@@ -138,7 +175,11 @@ std::vector<std::array<int, 1>> runModel(
        }
 
 
-
+        std::cout << nodes[0].value << std::endl;
+        // Forming output
+        std::array<int, 1> outputSlice;
+        outputSlice[0] = nodes[0].value;
+        output.push_back(outputSlice);
 
        activeNodes.clear();
        activeNodes = currentNodes;
@@ -146,8 +187,11 @@ std::vector<std::array<int, 1>> runModel(
        timestep++;
    }
 
-   //std::cout << "Here" << std::endl;
-   printModel(nodes);
+    for (auto outputSlice: output){
+      std::cout << outputSlice[0] << std::endl;
+     }
+
+   //printModel(nodes);
    return output;
 }
 
@@ -155,7 +199,7 @@ std::vector<std::array<int, 1>> runModel(
 void printModel(const std::vector<NodeV2>& nodes) {
    std::cout << "index\tthreshold\tbias\n";
    for (auto node: nodes) {
-       std::cout << node.index << "\t" << node.threshold << "\t\t" << node.bias << " | ";
+       std::cout << node.index << "\t\t" << node.threshold << "\t\t\t" << node.bias << "\t| ";
        for (auto connections: node.connected_from) {
            std::cout << connections.index << " " << connections.value << ", ";
        }
