@@ -7,20 +7,22 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <random>
+#include <chrono>
 
 #define FILE "data.txt"
 #define INPUT_NODE_INDEX -1
 class Sample {
   public:
-  std::vector<int> input;
-  std::vector<int> output;
+  std::vector<float> input;
+  std::vector<float> output;
 };
 
 
 class bi_int {
   public:
   int index;
-  int value;
+  float value;
 };
 
 
@@ -46,14 +48,36 @@ class Node {
 
 class NodeV2 {
    public:
-   int threshold = 0;
-   int bias = 0;
+   float threshold = 0;
+   float bias = 0;
    // int weight = 1;
-   int value = 0; // ?
+   float value = 0; // ?
+   
+   // float points ?
    int index = 0;
    std::vector<bi_int> connected_from;
 };
 
+class NodeV3 { // NodeV3 is basically identical to NodeV2, except for newValue
+    public:
+    int index = 0;
+
+    float threshold = 0;
+    float bias = 0;
+
+    float value = 0;
+    float newValue = 0;
+
+    float resourceLimit = 0; // Innovation
+    float resourcesUsed = 0;
+
+    float overLoss;
+    float underLoss;
+
+    // Somehow encode expectations
+    // Expectations of values of predeceding nodes would show what it expects what following nodes want
+    std::vector<bi_int> connected_from;
+};
 
 std::string extract(std::string filename);
 std::vector<std::array<int, 1>> runModel(
@@ -66,133 +90,145 @@ void printModel(const std::vector<NodeV2>& nodes);
 
 
 int main(int argc, char *argv[]) {
-  std::vector<NodeV2> nodes;
-  std::vector<bi_int> activeNodes; // Try 1
-   std::string data = extract(FILE);
-  std::cout << data << "\n";
+    srand(time(NULL));
 
+    std::vector<NodeV2> nodes;
+    std::vector<bi_int> activeNodes; // Try 1
+    std::string data = extract(FILE);
+    std::cout << data << "\n";
+    
+    std::vector<Sample> samples;
+    //samples = parseData(data);
 
-   auto samples = parseData(data);
-  
-   NodeV2 node;
-   bi_int connection;
-   connection.index = INPUT_NODE_INDEX;
-   connection.value = 1;
-   node.connected_from.push_back(connection);
-   node.index = 0;
-   nodes.push_back(node);
+    for (int i = 0; i < 35; i++) {
+        Sample sample;
+        float randomF = (float)random() * 30593 / 29877;
+        float randomN = fmod(randomF, 500);
+        sample.input.push_back(randomN);
+        sample.output.push_back(randomN * 2 + 17);
+
+        samples.push_back(sample);
+    }
+
+    NodeV2 node;
+    bi_int connection;
+    connection.index = INPUT_NODE_INDEX;
+    connection.value = 1;
+    node.connected_from.push_back(connection);
+    node.index = 0;
+    nodes.push_back(node);
+
     for (auto sample: samples) {
-      // For 1 var input and 1 var output
-      bi_int inputNode;
-      inputNode.index = INPUT_NODE_INDEX;
-      inputNode.value = sample.input.front();
-      activeNodes.push_back(inputNode);
+        bi_int inputNode;
+        inputNode.index = INPUT_NODE_INDEX;
+        inputNode.value = sample.input.front();
+        activeNodes.push_back(inputNode);
 
-       // int cost = 0; // ?
-       std::cout << "Here: " << sample.input.front() << "\t" << sample.output.front() <<"\n";
-       runModel(nodes, activeNodes, sample); // timestep, chain ?
-   }
+        std::cout << "Here: " << sample.input.front() << "\t" << sample.output.front() <<"\n";
+        runModel(nodes, activeNodes, sample); // timestep, chain ?
+        std::cout << "There\n";
+    }
 
-   return 0;
+    return 0;
 }
 
 
 /* Run Model Try 1, V2 */
 std::vector<std::array<int, 1>> runModel(
-  std::vector<NodeV2>& nodes,
-  std::vector<bi_int> activeNodes,
-  Sample sample
-) {
-     int timestep = 0;
-   std::vector<bi_int> currentNodes;
-   std::vector<std::array<int, 1>> output; // generalize
+    std::vector<NodeV2>& nodes,
+    std::vector<bi_int> activeNodes,
+    Sample sample
+) { // Runs and updates the model
 
+    int timestep = 0;
+    std::vector<bi_int> currentNodes;
+    std::vector<std::array<int, 1>> output; // generalize
 
-   while (1) {
-       if (timestep > 20) break; //  primitive handling of breaking system
-       currentNodes.clear();
+    while (1) {
+        if (timestep > 5) break; //  primitive handling of breaking system
+        currentNodes.clear();
 
-       // Randomly add nodes and see if it works
-       NodeV2 randomNode;
-       randomNode.index = nodes.size();
-       bi_int randomConnection;
-       randomConnection.index = random() % nodes.size();
-       if (!(random() % 3)) {
-        randomConnection.index = -1;
-       }
-       randomConnection.value = random() % 50;
-       randomNode.connected_from.push_back(randomConnection);
-       randomNode.threshold = random() % 100 - 100;
-       randomNode.bias = random() % 100 - 100;
-       
-      
-       nodes.push_back(randomNode); // Theoretically, if all works, this should be able to learn...
+        for (auto &node: nodes) {
+            int accumulator = node.bias; // node.value ?
+            for (auto inputtingNode: node.connected_from) {
+                auto it = std::find_if( // fix implementation
+                    activeNodes.begin(),
+                    activeNodes.end(),
+                    [inputtingNode](bi_int other) {
+                        return other.index == inputtingNode.index;
+                    }
+                );
 
-      bi_int randomConnection2;
-       randomConnection2.index = random() % nodes.size();
-       randomConnection2.value = random() % 50;
-       if (true){
-         nodes[0].connected_from .push_back(randomConnection2);
-       }
-       for (auto &node: nodes) {
-           int accumulator = node.bias; // node.value ?
-           for (auto inputtingNode: node.connected_from) {
-               auto it = std::find_if( // fix implementation
-                   activeNodes.begin(),
-                   activeNodes.end(),
-                   [inputtingNode](bi_int other) {
-                       return other.index == inputtingNode.index;
-                   }
-               );
-               if (it != activeNodes.end()) {
-                   accumulator += inputtingNode.value * it->value;
-               }
-           }
+                if (it != activeNodes.end()) {
+                    accumulator += inputtingNode.value * it->value;
+                }
+            }
+
             bool activate = accumulator > node.threshold;
             node.value = activate ? accumulator : 0;
-            //if (node.index == 0) {
-              //std::cout << "test " << activate << " " << node.value << "\n";
-            //}
-            
-            for (auto& inputtingNode: node.connected_from) {
-              auto it = std::find_if(
-                nodes.begin(),
-                nodes.end(),
-                [inputtingNode](NodeV2 other) {
-                  return other.index == inputtingNode.index;
-                }
-              ); // Expectations
-                                                                     // These multipliers should change based off how wrong the signal was
-               inputtingNode.value = (float)inputtingNode.value * (activate ? 1.5 : .75) + (accumulator ? 7: -6);
+
+            for (auto& inputtingNode: node.connected_from) { // same for output nodes?
+                auto it = std::find_if(
+                    nodes.begin(),
+                    nodes.end(),
+                    [inputtingNode](NodeV2 other) {
+                        return other.index == inputtingNode.index;
+                    }
+                ); // Expectations
+                // These multipliers should change based off how wrong the signal was
+                inputtingNode.value = (float)inputtingNode.value * (activate ? 1.5 : .75) + (accumulator ? 7: -6);
             }
-            
-           if (activate) {
-               bi_int current;
-               current.index = node.index;
-               current.value = accumulator;
-               currentNodes.push_back(current);
-           }
-       }
 
+            if (timestep > 4 && node.index == 0) { // ?
+                for (auto& inputtingNode: node.connected_from) {
+                    auto it = std::find_if(
+                        nodes.begin(),
+                        nodes.end(),
+                        [inputtingNode](NodeV2 other) {
+                            return other.index == inputtingNode.index;
+                        }
+                    );
 
-        std::cout << nodes[0].value << std::endl;
+                    if (activate) {
+                        int error = accumulator - sample.output[0];
+                        error = error * error / 256;
+                        it->threshold += error;
+                        it->bias += error / 2;
+                        inputtingNode.value *= (error / 128);
+                    } else {
+                        it->bias += 100;
+                        it->threshold -= 100;
+                        inputtingNode.value += 35;
+                    }
+                }
+            }
+
+            if (activate) {
+                bi_int current;
+                current.index = node.index;
+                current.value = accumulator;
+                currentNodes.push_back(current);
+            }
+        }
+
         // Forming output
         std::array<int, 1> outputSlice;
         outputSlice[0] = nodes[0].value;
         output.push_back(outputSlice);
 
-       activeNodes.clear();
-       activeNodes = currentNodes;
-  
-       timestep++;
-   }
+        activeNodes.clear();
+        activeNodes = currentNodes;
 
+        timestep++;
+    }
+
+    //std::cout << "End\n";
     for (auto outputSlice: output){
-      std::cout << outputSlice[0] << std::endl;
-     }
+        std::cout << outputSlice[0] << std::endl;
+    }
 
-   //printModel(nodes);
-   return output;
+    //printModel(nodes);
+    return output;
 }
 
 
@@ -268,4 +304,71 @@ std::vector<Sample> parseData(const std::string& data) {
   }
 
   return samples;
+}
+
+void updateNodeValues(std::vector<NodeV3>& nodes) {
+    for (auto& node: nodes) {
+        node.value = node.newValue;
+        node.newValue = 0;
+    }
+}
+
+std::vector<std::array<int, 1>> runModel(
+    std::vector<NodeV3>& nodes,
+    Sample sample
+) { // Runs and updates the model
+
+    int timestep = 0;
+    std::vector<std::array<int, 1>> output; // generalize
+
+    while (1) {
+        if (timestep > 5) break; //  primitive handling of breaking system
+
+        for (auto &node: nodes) {
+            int accumulator = 0; // node.bias
+            for (auto inputtingNodeBi: node.connected_from) {
+                const float value = inputtingNodeBi.index >= 0 ? nodes[inputtingNodeBi.index].value: sample.input[-inputtingNodeBi.index - 1];
+                accumulator += inputtingNodeBi.value * value;
+            }
+
+            node.newValue = std::max(accumulator, 0); // node.threshold
+            bool activate = node.newValue > 0;
+            
+            // Gerenating some macro info
+            float multiplier = 0;
+            for (auto inputtingNodeBi: node.connected_from) {
+                multiplier += abs(inputtingNodeBi.value);
+            }
+            float adjustedValue = node.newValue / multiplier;
+
+            for (auto& inputtingNodeBi: node.connected_from) { // Expectations
+                if (inputtingNodeBi.index < 0) {
+                    const float loss = sample.input[-inputtingNodeBi.index - 1] - adjustedValue;
+                } else {
+                    nodes[inputtingNodeBi.index];
+                    if (activate) {
+
+                    } else {
+
+                    }
+                }
+            }
+        }
+
+        // Forming output
+        std::array<int, 1> outputSlice;
+        outputSlice[0] = nodes[0].newValue;
+        output.push_back(outputSlice);
+        
+        updateNodeValues(nodes);
+        timestep++;
+    }
+
+    //std::cout << "End\n";
+    for (auto outputSlice: output){
+        std::cout << outputSlice[0] << std::endl;
+    }
+
+    //printModel(nodes);
+    return output;
 }
