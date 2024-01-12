@@ -50,6 +50,10 @@
         "charconv": "cpp",
         "chrono": "cpp",
         "format": "cpp",
-        "ratio": "cpp"
+        "ratio": "cpp",
+        "ctime": "cpp",
+        "iomanip": "cpp",
+        "span": "cpp",
+        "variant": "cpp"
     }
 }
