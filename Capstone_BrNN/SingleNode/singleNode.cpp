@@ -14,6 +14,9 @@
 
 #define FILE "data.txt"
 #define INPUT_NODE_INDEX -1
+constexpr const int is_positive[] = {-1, 1};
+
+
 class Sample {
     public:
     std::vector<float> input;
@@ -31,39 +34,40 @@ class intFloat {
 
 class Memory {
    public:
-   bool activate;
-   float accumulator;
-   float value;
-   // float loss; // ?
+   float accumulator = 0;
+   // bool activate;
+   // float value;
+   // float loss;
    // any other info
 };
 
 
 class NodeV3 { // NodeV3 is basically identical to NodeV2, except for newValue
-   public:
-   int index = 0;
+    public:
+    int index = 0;
 
 
-   // What should be recorded in memory
-   float threshold = 0;
-   float floor = 0;
-   float multiplier = 1;
+    // What should be recorded in memory
+    float threshold = 0;
+    float floor = 0;
+    float multiplier = 1;
 
 
-   float value = 0;
-   float newValue = 0;
+    float value = 0;
+    float newValue = 0;
 
 
-   float resourceLimit = 0; // Innovation
-   float resourcesUsed = 0;
+    float resourceLimit = 0; // Innovation
+    float resourcesUsed = 0;
 
 
-   float loss = 0;
+    float avgLoss = 0;
+    float adjLoss = 0;
 
+    float use = 0;
 
    // Somehow encode expectations of predeceding nodes' values
    // which would collectively show what it expects what following nodes want
-
 
    std::vector<intFloat> connected_from;
 
@@ -78,8 +82,6 @@ std::vector<std::array<float, 1>> runModel(
     std::vector<NodeV3>& nodes,
     Sample sample
 );
-
-
 
 
 int main(int argc, char *argv[]) {
@@ -134,8 +136,6 @@ int main(int argc, char *argv[]) {
     for (auto sample: samples) {
         std::cout << "Here: " << sample.input.front() << "\t" << sample.output.front() <<"\n";
         runModel(nodes, sample);
-        //printModel(nodes);
-        //runModel(nodes, activeNodes, sample); // timestep, chain ?
         std::cout << "There\n";
     }
 
@@ -158,14 +158,22 @@ void printModel(const std::vector<NodeV3>& nodes) {
 void updateNodeValues(std::vector<NodeV3>& nodes) {
     for (auto& node: nodes) {
         node.value = node.newValue;
-        // node.newValue = 0; // Should be wrong?
+        node.use = 0;
+        node.avgLoss = 0;
+        node.adjLoss = 0;
+        node.newValue = 0;
     }
 }
-
 
 void addMemory(std::vector<NodeV3>& nodes) {
 	for (auto& node: nodes) {
 		node.memory.push_back(Memory{});
+	}
+}
+
+void setValue(std::vector<NodeV3>& nodes) {
+	for (auto& node: nodes) {
+		node.newValue = node.multiplier * (std::max((float)0.0, node.threshold) - node.threshold) + node.floor;
 	}
 }
 
@@ -177,6 +185,9 @@ std::vector<std::array<float, 1>> runModel(
     int timestep = 0;
     std::vector<std::array<float, 1>> output; // generalize
 
+    addMemory(nodes);
+    setValue(nodes);
+    updateNodeValues(nodes);
 
     // implement analytical mode (Most strength per computing resource)
     while (1) {
@@ -192,64 +203,65 @@ std::vector<std::array<float, 1>> runModel(
                 accumulator += inputtingNodeBi.floatValue * value;
             }
 
-            //std::cout << accumulator << std::endl;
-            
+            // std::cout << accumulator << std::endl;
             if (accumulator > 500) std::cout << "Hit Ceiling" << std::endl;
             accumulator = std::clamp(accumulator, (float)-500, (float)-500);
+            
             node.newValue = node.multiplier * (std::max(accumulator, node.threshold) - node.threshold) + node.floor;
-
             node.memory[node.memory.size() - 1].accumulator = accumulator;
           /* threshold, floor, multiplier
            * node.memory.value = node.newValue; 				    // ? Memory has no use yet
            * node.memory.activate = accumulator > node.threshold; 	// ? Not needed in current state adjustments as node.newValue or accumulator > node.threshold gives it
            */
 
+
             for (auto inputtingNodeBi: node.connected_from) { // Computing loss from average
-                // Should there be two losses? avgLoss and adjLoss
+                const float loss = (accumulator > node.threshold || nodes[inputtingNodeBi.i].value > 0) ?
+                    node.multiplier * (nodes[inputtingNodeBi.i].value - std::max(accumulator, node.threshold)):
+                    0;
 
-                float loss = 0; // Fixed
-                if (accumulator > node.threshold || nodes[inputtingNodeBi.i].value > 0) {
-                    loss = node.multiplier * (nodes[inputtingNodeBi.i].value - std::max(accumulator, node.threshold));
-                }
-
-                // Presssures for each part of the node, f, t, m
-                nodes[inputtingNodeBi.i].loss += std::abs(inputtingNodeBi.floatValue) * std::abs(loss) * loss;
+                // Pressures for each part of the node, f, t, m
+                nodes[inputtingNodeBi.i].avgLoss += std::abs(inputtingNodeBi.floatValue) * std::abs(loss) * loss;
+		        nodes[inputtingNodeBi.i].use += std::abs(inputtingNodeBi.floatValue);
             } // Use an array to hold the loss of each node ?
             // Try to store everything in arrays in accordance with FP
             // Missing node connections corrections, new connnections and new nodes
         }
 
+
         // Should node[0] be connected to input (somehow)?
-        const float loss = sample.output[0] - nodes[0].newValue;
-        nodes[0].loss = std::abs(loss) * loss / (std::exp((float)-timestep + (float)2.0) + 1.0);
+        const float loss = nodes[0].newValue - sample.output[0];
+        nodes[0].avgLoss = std::abs(loss) * loss / (std::exp(-1.4 * ((double)timestep - 3.2)));
+        nodes[0].use = 1.0;
+
 
         for (auto node: nodes) { // Adjusted correction from received loss
+            if (node.use == 0) continue;
+            const float adjAcc = node.memory[node.memory.size() - 2].accumulator - (double)is_positive[node.avgLoss > 0] * std::sqrt(std::abs(node.avgLoss))/node.use;
+            
             for (auto inputtingNodeBi: node.connected_from) {
-                nodes[inputtingNodeBi.i].loss += inputtingNodeBi.floatValue * node.loss; // Will this work? Recursive?
+                const float loss = (adjAcc > node.threshold || nodes[inputtingNodeBi.i].value > 0) ?
+                    node.multiplier * (nodes[inputtingNodeBi.i].value - std::max(adjAcc, node.threshold)):
+                    0;
+
+             	// Pressures for each part of the node, f, t, m
+	       	    nodes[inputtingNodeBi.i].adjLoss += std::abs(inputtingNodeBi.floatValue) * std::abs(loss) * loss;
             }
         }
 
-
+        nodes[0].adjLoss = nodes[0].avgLoss;
+        
         for (auto& node: nodes) { // Correction of node states from loss
-            float k = 2;
-            float adj = k / (std::exp(-node.loss) + 1.0) - k/2;
-            if (node.newValue > node.threshold) {
-                // Use rightmost two data points as initial line, continuing adding points until rolling average loss is greater than running loss… or not?
-                float distance = node.memory[node.memory.size() - 1].accumulator - node.threshold;
-                distance = std::abs(distance) > 0.1 ? distance: random() % 2 ? 0.1 : -0.1;
+            if (node.use == 0) continue;
+            float scaledLoss = (double)is_positive[node.avgLoss > 0] * std::sqrt(std::abs(node.avgLoss))/node.use;
 
-                node.threshold += adj;
-                node.multiplier += std::cbrt(node.loss)/distance;
-            } else {
-                float multiplier = node.multiplier;
-                multiplier = std::abs(multiplier) > 0.1 ? multiplier: random() % 2 ? 0.1 : -0.1;
-                node.floor += adj;
-                node.threshold += adj / multiplier;
-            } // Most radical case should have loss swinging back and forth
+            node.floor -= scaledLoss;
+            // Most radical case should have loss swinging back and forth
 
             node.multiplier = std::clamp(node.multiplier, (float)-300, (float)300);
             node.threshold  = std::clamp(node.threshold,  (float)-500, (float)500);
             node.floor      = std::clamp(node.floor,      (float)-500, (float)500);
+		    // Are these clamps necessary? Because they will 'eventually' significantly limit the freedom of the BbNN parameter space
         }
 
 
@@ -261,8 +273,6 @@ std::vector<std::array<float, 1>> runModel(
     }
 
 
-    //std::cout << "End\n";
-    
     for (auto outputSlice: output){
         std::cout << outputSlice[0] << std::endl;
     }
@@ -287,62 +297,62 @@ std::string extract(std::string filename) {
 
 
 std::vector<Sample> parseData(const std::string& data) {
- std::vector<Sample> samples;
+    std::vector<Sample> samples;
 
 
- // Split the input string into lines
- std::istringstream iss(data);
- std::string line;
+    // Split the input string into lines
+    std::istringstream iss(data);
+    std::string line;
 
 
- while (std::getline(iss, line)) {
-     Sample sample;
+    while (std::getline(iss, line)) {
+        Sample sample;
 
 
-     // Find the position of 'I:(' and 'O:('
-     size_t inputStart = line.find("I:(") + 3;
-     size_t inputEnd = line.find("), O:(");
-     size_t outputStart = inputEnd + 7;
-     size_t outputEnd = line.find(")");
+        // Find the position of 'I:(' and 'O:('
+        size_t inputStart = line.find("I:(") + 3;
+        size_t inputEnd = line.find("), O:(");
+        size_t outputStart = inputEnd + 7;
+        size_t outputEnd = line.find(")");
 
 
-     // Parse input and output substrings
-     std::string inputStr = line.substr(inputStart, inputEnd - inputStart);
-     std::string outputStr = line.substr(outputStart, outputEnd - outputStart);
+        // Parse input and output substrings
+        std::string inputStr = line.substr(inputStart, inputEnd - inputStart);
+        std::string outputStr = line.substr(outputStart, outputEnd - outputStart);
 
 
-     // Parse individual integers from the input string and populate the input vector
-     std::istringstream inputStream(inputStr);
-     int num;
-     while (inputStream >> num) {
-         sample.input.push_back(num);
+        // Parse individual integers from the input string and populate the input vector
+        std::istringstream inputStream(inputStr);
+        int num;
+        while (inputStream >> num) {
+            sample.input.push_back(num);
 
 
-         // Check for the comma separator
-         if (inputStream.peek() == ',') {
-             inputStream.ignore();
-         }
-     }
+            // Check for the comma separator
+            if (inputStream.peek() == ',') {
+                inputStream.ignore();
+            }
+        }
 
 
-     // Parse individual integers from the output string and populate the output vector
-     std::istringstream outputStream(outputStr);
-     while (outputStream >> num) {
-         sample.output.push_back(num);
+        // Parse individual integers from the output string and populate the output vector
+        std::istringstream outputStream(outputStr);
+        while (outputStream >> num) {
+            sample.output.push_back(num);
 
 
-         // Check for the comma separator
-         if (outputStream.peek() == ',') {
-             outputStream.ignore();
-         }
-     }
+            // Check for the comma separator
+            if (outputStream.peek() == ',') {
+                outputStream.ignore();
+            }
+        }
 
 
-     // Add the populated sample to the vector
-     samples.push_back(sample);
- }
+        // Add the populated sample to the vector
+        samples.push_back(sample);
+    }
 
 
- return samples;
+    return samples;
 }
 
