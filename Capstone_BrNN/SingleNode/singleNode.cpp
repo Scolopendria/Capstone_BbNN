@@ -253,9 +253,18 @@ std::vector<std::array<float, 1>> runModel(
         
         for (auto& node: nodes) { // Correction of node states from loss
             if (node.use == 0) continue;
-            float scaledLoss = (double)is_positive[node.avgLoss > 0] * std::sqrt(std::abs(node.avgLoss))/node.use;
+            float safe_multiplier = is_positive[node.multiplier > 0] * (std::abs(node.multiplier) + 0.1);
+            float scaledLoss = (double)is_positive[node.adjLoss > 0] * std::sqrt(std::abs(node.adjLoss))/node.use;
+            float distance = node.memory[node.memory.size() - 1].accumulator - node.threshold;
 
-            node.floor -= scaledLoss;
+            if (distance > 0) {
+                distance = -scaledLoss / safe_multiplier;
+            }
+            
+            float r = 0.5 * std::abs(distance) / (std::abs(scaledLoss) + std::abs(distance) + 0.01);
+            node.floor -= r * scaledLoss;
+            node.threshold -= (-r + 1.0 ) * distance;
+
             // Most radical case should have loss swinging back and forth
 
             node.multiplier = std::clamp(node.multiplier, (float)-300, (float)300);
